@@ -1,0 +1,2 @@
+xshl-target>=0.3.2
+authlib>=1.0.1
