@@ -1,2 +1,3 @@
 xshl-target>=0.3.2
-authlib>=1.0.1
+authlib>=1.3.0
+requests>=2.32.4
