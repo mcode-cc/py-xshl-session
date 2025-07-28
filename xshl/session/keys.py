@@ -40,6 +40,7 @@ class Keys:
         self.target = target
         self.url = url
         self._ttl = ttl
+        self.name = target.entity
         self._update = 0
         self._keys = KeySet([])
 
