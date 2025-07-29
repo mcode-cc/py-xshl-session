@@ -32,8 +32,3 @@ class SessionClaims(JWTClaims):
             uuid.UUID(self.get("iss"))
         except ValueError:
             raise InvalidClaimError("iss")
-
-    def validate(self, now=None, leeway=0, audience: str = None):
-        super().validate(now, leeway)
-        if audience is not None and not self.get("aud") == audience:
-            raise InvalidClaimError("aud")

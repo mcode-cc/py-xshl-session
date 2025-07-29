@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import uuid
+from uuid import NAMESPACE_OID
 from copy import deepcopy
 from typing import Optional, Type, Union
 
@@ -12,8 +13,8 @@ from .claims import SessionClaims
 from .keys import Keys
 from .utilites import datetime_as_8601, dict_merge
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
+log = logging.getLogger(__name__)
+log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
 JWE = JsonWebEncryption()
 
 NAME_ENCRYPT = "{}a"
@@ -26,10 +27,10 @@ DEFAULT_UID = "00000000-0000-0000-0000-000000000000"
 DEFAULT_STR = "undef"
 
 
-class Session:
+class ConfigSession:
     def __init__(self, keys: Keys, app: uuid.UUID = None, audience: list = None, header: dict = None,
                  version: int = DEFAULT_SESSION_VERSION, expires: int = DEFAULT_SESSION_EXPIRES,
-                 key: Optional[bytes, Key] = None, claims_cls: Type[JWTClaims] = SessionClaims):
+                 key: Optional[bytes, Key] = None):
         """
         :param keys: The "Keys" class containing public keys
         :param app: Application UUID for iss encoding JWT
@@ -40,77 +41,75 @@ class Session:
         :param key: The private key for the JWE decoding or JWT encoding operation
         """
         self.keys = keys
-        self.name = keys.name
-        self.app = app
+        self.audience = audience
         self.header = header
+        self.version = int(version)
         self.expires = int(expires)
+        self.private = key if isinstance(key, Key) else JsonWebKey.import_key(key)
 
-        self._version = int(version)
-        self._options = {"version": {"value": self._version}}
-        if isinstance(audience, list):
-            self._options["aud"] = {"values": audience}
-        self._claims = None
-        self._claims_cls = claims_cls
-        self._private = key if isinstance(key, Key) else JsonWebKey.import_key(key)
+        if isinstance(app, uuid.UUID):
+            self.app = str(app)
+        else:
+            raise TypeError("app must be 'UUID' (not '{}') to str".format(type(app).__name__))
 
-    def __add__(self, other: 'Session'):
+        if isinstance(header, dict):
+            if "kid" in header:
+                self.kid = header["kid"]
+            else:
+                raise ValueError("'header' must be a dictionary with 'kid' key when provided")
+
+
+class Session:
+    claims_cls: Type[JWTClaims] = SessionClaims
+
+    def __init__(self, config: ConfigSession, trace: list, sid: str = None):
+        self._config = config
+        self.name = config.keys.name
+        self._trace = trace
+        self._sid = sid
+        self._claims = self.claims_cls(payload={}, header=config.header)
+
+    def __add__(self, other: Union['Session', str]):
         """
-        Combines attributes ("_payloads", "_meta", "scope", "_scope") the current and transmitted session.
+        Combines attributes ("_payloads", "_meta", "scope", "_scope") the current and transmitted session or JWT.
         """
+        _claims = None
         if isinstance(other, Session):
+            _claims = other._claims
+        elif isinstance(other, str):
+            try:
+                _claims = jwt.decode(
+                    other, key=self._config.keys(), claims_options=self.options, claims_cls=self.claims_cls
+                )
+                _claims.validate()
+            except InvalidClaimError as claim:
+                log.debug(claim)
+            except Exception as e:
+                log.warning(e)
+        else:
+            raise TypeError(
+                "can only concatenate '{}' or 'str' (not '{}') to str".format(self.__name__, type(other).__name__)
+            )
+
+        if _claims is not None:
             for attribute in ["_payloads", "_meta", "scope", "_scope"]:
-                value = other.value
-                if attribute in value:
-                    if isinstance(value[attribute], dict) and isinstance(self._claims.get(attribute), dict):
-                        setattr(self._claims, attribute, dict_merge(self._claims[attribute], value[attribute]))
+                if attribute in _claims:
+                    if isinstance(_claims[attribute], dict) and isinstance(self._claims.get(attribute), dict):
+                        setattr(self._claims, attribute, dict_merge(self._claims[attribute], _claims[attribute]))
                     # We add up the scope if at least one of them is a list.
-                    elif isinstance(value[attribute], list) or isinstance(self._claims.get(attribute), list):
-                        if isinstance(value[attribute], list):
-                            new = value[attribute]
+                    elif isinstance(_claims[attribute], list) or isinstance(self._claims.get(attribute), list):
+                        if isinstance(_claims[attribute], list):
+                            new = _claims[attribute]
                             addend = self._claims.get(attribute)
                         else:
                             new = self._claims.get(attribute)
-                            addend = value[attribute]
+                            addend = _claims[attribute]
                         new += addend if isinstance(addend, list) else [addend] if isinstance(addend, str) else []
                         setattr(self._claims, attribute, list(set(new)))
                     else:
-                        setattr(self._claims, attribute, value[attribute])
-        else:
-            raise TypeError("can only concatenate '{}' (not '{}') to str".format(self.__name__, type(other).__name__))
+                        setattr(self._claims, attribute, _claims[attribute])
 
-    def new(self, audience: str = DEFAULT_STR, subject: str = DEFAULT_UID,
-            expires: int = None, path: str = None, trace: list = None):
-        """
-        Creates new jwt data for the current object (session)
-        """
-        _t = int(time.time())
-        self._claims = self._claims_cls(
-            {
-                "iss": self.app,
-                "aud": audience,
-                "sub": subject,
-                "exp": _t + int(expires or self.expires),
-                "nbf": _t,
-                "jti": str(uuid.uuid4()),
-                "iat": _t,
-                "version": self._version,
-                "sid": str(uuid.uuid4())
-            },
-            header=self.header
-        )
-        if path is not None:
-            self.path = path
-        if trace is not None:
-            self.trace = trace
-
-    def update(self, trace: list = None, path: str = None, scope: list = None, **kwargs):
-        _t = int(time.time())
-        self._claims.jti = str(uuid.uuid4())
-        self._claims.exp = _t + self.expires
-        self._claims.nbf = _t
-        self.iss = self.app
-        if trace is not None:
-            self.trace = trace
+    def update(self, path: str = None, scope: list = None, **kwargs):
         if path is not None:
             self.path = path
         if scope is not None:
@@ -127,39 +126,10 @@ class Session:
                 else:
                     setattr(self, k, v)
 
-    def copy(self, token: str = None) -> "Session":
-        """
-        :return: Copies an instance of the class, sets the data if there is a token.
-        """
-        session = self.__class__(
-            keys=self.keys,
-            app=self.app,
-            audience=None if "aud" not in self._options else self._options["aud"]["values"],
-            header=self.header,
-            version=self._version,
-            expires=self.expires,
-            key=self._private,
-            claims_cls=self._claims_cls
-        )
-        if token:
-            session.jwt = token
-        return session
-
     # Default JWT claims:
     @property
     def iss(self) -> str:
         return self._claims.iss
-
-    @iss.setter
-    def iss(self, value: str):
-        """
-        @param value: Must be uuid
-        """
-        try:
-            self._claims.iss = str(uuid.UUID(value))
-        except ValueError:
-            self._claims.iss = DEFAULT_UID
-            logger.warning("Incorrect iss: {}".format(value))
 
     @property
     def sub(self) -> str:
@@ -180,10 +150,6 @@ class Session:
     # ------
 
     # Service JWT claims
-    @property
-    def sid(self) -> str:
-        return self._claims.sid
-
     @property
     def scope(self) -> Union[list, str]:
         return self._claims.get("scope", None)
@@ -224,11 +190,6 @@ class Session:
     @property
     def trace(self) -> str:
         return self._claims.get("trace", DEFAULT_STR)
-
-    @trace.setter
-    def trace(self, value: list):
-        value = value if isinstance(value, list) else []
-        self._claims.trace = self.get_trace(*value)
 
     @property
     def future_scope(self):
@@ -305,23 +266,20 @@ class Session:
         :param header: A dict of protected header
         :return:
         """
-        if self.header and "kid" in self.header:
-            key = self.keys(kid=self.header["kid"])
-            if key is not None:
-                try:
-                    return JWE.serialize_compact(protected=header, payload=value, key=key).decode()
-                except Exception as e:
-                    logger.error(e)
-            else:
-                raise ValueError("Cannot serialize: No public key for serialize.")
+        key = self._config.keys(kid=self._config.kid)
+        if key is not None:
+            try:
+                return JWE.serialize_compact(protected=header, payload=value, key=key).decode()
+            except Exception as e:
+                log.error(e)
         else:
-            raise ValueError("Cannot serialize: 'header' must be a dictionary containing at 'kid'.")
+            raise ValueError("Cannot serialize: No public key for serialize.")
 
     def deserialize(self, value=None) -> str:
-        if self._private:
+        if self._config.private:
             result = None
             if value is not None:
-                result = JWE.deserialize_compact(value, key=self._private)["payload"].decode()
+                result = JWE.deserialize_compact(value, key=self._config.private)["payload"].decode()
             return result
         raise ValueError("Cannot deserialize: 'key' (private key) is not initialized.")
 
@@ -330,31 +288,42 @@ class Session:
     # Token
     @property
     def jwt(self) -> Optional[str]:
-        if self._private:
+        if self._config.private:
             try:
+                _t = int(time.time())
+                self._claims.jti = str(uuid.uuid4())
+                self._claims.iat = _t
+                self._claims.exp = _t + self._config.expires
+                self._claims.nbf = _t
+                self._claims.iss = self._config.app
+                self._claims.trace = self.get_trace(self._trace)
+                self._claims.sid = self.sid
+                self._claims.version = self._config.version
+                self._claims.validate()
                 result = jwt.encode(
-                    header=self.header,
+                    header=self._config.header,
                     payload=datetime_as_8601(self.value),
-                    key=self._private
+                    key=self._config.private
                 ).decode()
             except Exception as e:
                 result = None
-                logger.warning(e)
+                log.warning(e)
             return result
         raise ValueError("Cannot return JWT: 'key' (private key) is not initialized.")
 
     @jwt.setter
     def jwt(self, value: str):
         try:
-            self._claims = jwt.decode(
-                value, key=self.keys(), claims_options=self._options, claims_cls=self._claims_cls
+            _claims = jwt.decode(
+                value, key=self._config.keys(), claims_options=self.options, claims_cls=self.claims_cls
             )
-            self._claims.validate()
+            _claims.validate()
         except InvalidClaimError as claim:
-            self._claims = None
-            logger.debug(claim)
+            log.debug(claim)
         except Exception as e:
-            logger.warning(e)
+            log.warning(e)
+        else:
+            self._claims = _claims
 
     # ------
 
@@ -365,24 +334,29 @@ class Session:
         """
         return deepcopy(dict(self._claims))
 
-    def validate(self, sid: str, *args, trace=True, audience: str = None) -> bool:
-        result = False
-        if self._claims is not None:
-            try:
-                self._claims.validate(audience=audience)
-                if int(self._claims.get("version", DEFAULT_SESSION_VERSION)) == self._version:
-                    if self.sid == sid:
-                        if not trace or self.trace == self.get_trace(*args):
-                            result = True
-            except InvalidClaimError as e:
-                logger.debug(e)
-            except Exception as ex:
-                logger.error(ex)
-        return result
+    def expire(self, _format="%a, %d %b %Y %H:%M:%S GMT") -> str:
+        return time.strftime(_format, time.gmtime(self._claims.exp))
 
     def get_trace(self, *args):
         """:returns: UUIDv5 string from trace args with spacename jti"""
         return str(uuid.uuid5(uuid.UUID(self._claims.jti), ":".join(map(str, args))))
 
-    def expire(self, _format="%a, %d %b %Y %H:%M:%S GMT") -> str:
-        return time.strftime(_format, time.gmtime(self._claims.exp))
+    def _trace_validate(self, _: JWTClaims, value: str):
+        return self.get_trace(*self._trace) == value
+
+    @property
+    def options(self):
+        result = {
+            "version": {"value": self._config.version},
+            "sid": {"value": self.sid},
+            "trace": {"validate": self._trace_validate}
+        }
+        if isinstance(self._config.audience, list):
+            result = {"values": self._config.audience}
+        return result
+
+    @property
+    def sid(self) -> str:
+        if self._sid is None:
+            self._sid = str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), ":".join(self._trace)))
+        return self._sid

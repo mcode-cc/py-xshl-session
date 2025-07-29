@@ -11,7 +11,7 @@ DEFAULT_KEYS_TTL = 60 * 60  # Default update after 1 hour
 class Keys:
     def __init__(self, target: Target, url: str, ttl: int = DEFAULT_KEYS_TTL):
         """
-        Keys from API, response must be formate JWK
+        Keys from API, response must be formate JWK.
         Args:
             target: An object of the class "Target" from xshl.target
                 - Required: 'spot', 'base', 'entity'
