@@ -9,6 +9,7 @@ from authlib.jose import JsonWebKey, KeySet, Key
 
 DEFAULT_KEYS_TTL = 60 * 60  # Default update after 1 hour
 
+
 # """
 # /latest/text/i3a.json?target=auth:w3@jwks
 # REFERENCE_API_URL = os.getenv("REFERENCE_API_URL")
@@ -32,6 +33,7 @@ async def loader_reference(links):
             results.append(fetch(link, session))
         return await asyncio.gather(*results)
 
+
 # asyncio.run(loader_reference(urls))
 
 
@@ -42,13 +44,12 @@ class Keys:
         Args:
             target: An object of the class "Target" from xshl.target
                 - Required: 'spot', 'base', 'entity'
-                - Optional: '@context', '@id', '@type'
+                - Optional: '@context', '@id'
                 Example:
                     {
                         "spot": "auth",
                         "base": "prod",
                         "entity": "service1",
-                        "@type": "/reference",
                         "@context": {
                             "source": "text",
                             "path": "/keys",
@@ -58,7 +59,7 @@ class Keys:
 
             url: API endpoint template with placeholders. Must include host.
                 Example:
-                    "https://api.example.com/v2/{@id}/{@type}/{path}{ext}?target={spot}:{entity}@{base}"
+                    "https://api.example.com/v2/{@id}/{path}{ext}?target={spot}:{entity}@{base}"
 
             ttl: Time-to-live in seconds for cached public keys (refresh frequency)
         """

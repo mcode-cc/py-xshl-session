@@ -60,17 +60,11 @@ class ConfigSession:
         self.header = header
         self.version = int(version)
         self.expires = int(expires)
-        self.private = key if isinstance(key, Key) else JsonWebKey.import_key(key)
-
-        if isinstance(app, uuid.UUID):
-            self.app = str(app)
-        else:
-            raise TypeError("app must be 'UUID' (not '{}') to str".format(type(app).__name__))
+        self.private = None if key is None else key if isinstance(key, Key) else JsonWebKey.import_key(key)
+        self.app = str(app) if isinstance(app, uuid.UUID) else DEFAULT_UID
 
         if isinstance(header, dict):
-            if "kid" in header:
-                self.kid = header["kid"]
-            else:
+            if "kid" not in header:
                 raise ValueError("'header' must be a dictionary with 'kid' key when provided")
 
 
@@ -107,7 +101,7 @@ class Session:
             except Exception as e:
                 log.warning(e)
             else:
-                for attribute in ["aud", "sub", "_payloads", "_meta", "scope", "_scope"]:
+                for attribute in ["aud", "sub", "_payloads", "scope", "_scope"]:
                     if attribute in _claims:
                         if isinstance(_claims[attribute], dict) and isinstance(self._claims.get(attribute), dict):
                             setattr(self._claims, attribute, dict_merge(self._claims[attribute], _claims[attribute]))
@@ -234,22 +228,6 @@ class Session:
     def payloads(self):
         del self._claims["_payloads"]
 
-    @property
-    def meta(self) -> dict:
-        return deepcopy(self._claims.get("_meta", {}))
-
-    @meta.setter
-    def meta(self, value: dict):
-        """if setter None or null value, deleting "_meta"""""
-        if value:
-            setattr(self._claims, "_meta", value)
-        else:
-            del self.meta
-
-    @meta.deleter
-    def meta(self):
-        del self._claims["_meta"]
-
     # ------
 
     # NAMES
@@ -274,7 +252,7 @@ class Session:
         :param header: A dict of protected header
         :return:
         """
-        key = self._config.keys(kid=self._config.kid)
+        key = self._config.keys(kid=header.get("kid", DEFAULT_STR))
         if key is not None:
             try:
                 return JWE.serialize_compact(protected=header, payload=value, key=key).decode()
@@ -284,37 +262,32 @@ class Session:
             raise ValueError("Cannot serialize: No public key for serialize.")
 
     def deserialize(self, value=None) -> str:
-        if self._config.private:
-            result = None
-            if value is not None:
-                result = JWE.deserialize_compact(value, key=self._config.private)["payload"].decode()
-            return result
-        raise ValueError("Cannot deserialize: 'key' (private key) is not initialized.")
+        result = None
+        if value is not None:
+            result = JWE.deserialize_compact(value, key=self._config.private)["payload"].decode()
+        return result
 
     # ------
 
     # Token
     @property
     def jwt(self) -> Optional[str]:
-        if self._config.private:
-            try:
-                _t = int(time.time())
-                self._claims.jti = str(uuid.uuid4())
-                self._claims.iat = _t
-                self._claims.exp = _t + self._config.expires
-                self._claims.nbf = _t
-                self._claims.trace = self._trace.get(self._claims.jti)
-                result = jwt.encode(
-                    header=self._config.header,
-                    payload=datetime_as_8601(self.value),
-                    key=self._config.private
-                ).decode()
-            except Exception as e:
-                result = None
-                log.warning(e)
-            return result
-        raise ValueError("Cannot return JWT: 'key' (private key) is not initialized.")
-
+        try:
+            _t = int(time.time())
+            self._claims.jti = str(uuid.uuid4())
+            self._claims.iat = _t
+            self._claims.exp = _t + self._config.expires
+            self._claims.nbf = _t
+            self._claims.trace = self._trace.get(self._claims.jti)
+            result = jwt.encode(
+                header=self._config.header,
+                payload=datetime_as_8601(self.value),
+                key=self._config.private
+            ).decode()
+        except Exception as e:
+            result = None
+            log.warning(e)
+        return result
     # ------
 
     @property
