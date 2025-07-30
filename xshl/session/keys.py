@@ -73,11 +73,12 @@ class Keys:
 
 
 class ReferenceKeys(Keys):
-    def __init__(self, target: Target, url: str, ttl: int = DEFAULT_KEYS_TTL):
-        super(ReferenceKeys, self).__init__(target.entity, url + self.api_path(dict(target)), ttl)
+    def __init__(self, target: Target, trust_url: str, ttl: int = DEFAULT_KEYS_TTL):
+        super(ReferenceKeys, self).__init__(target.entity, trust_url + self.api_path(dict(target)), ttl)
         self.target = target
 
-    def api_path(self, item: dict) -> str:
+    @staticmethod
+    def api_path(item: dict) -> str:
         return API_REFERENCE.format(
             version=item.get("@id", "latest"),
             ext=item.get("@context", {}).pop("ext", ".json"),
