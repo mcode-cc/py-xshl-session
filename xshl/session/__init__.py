@@ -62,11 +62,9 @@ class ConfigSession:
 class Session:
     claims_cls: Type[JWTClaims] = SessionClaims
 
-    def __init__(self, config: ConfigSession, trace: list, sid: str = None):
+    def __init__(self, config: ConfigSession, trace: list):
         self._config = config
-        self.name = config.keys.name
         self._trace = trace
-        self._sid = sid
         self._claims = self.claims_cls(payload={}, header=config.header)
 
     def __add__(self, other: Union['Session', str]):
@@ -297,7 +295,7 @@ class Session:
                 self._claims.nbf = _t
                 self._claims.iss = self._config.app
                 self._claims.trace = self.get_trace(self._trace)
-                self._claims.sid = self.sid
+                self._claims.sid = self._sid
                 self._claims.version = self._config.version
                 self._claims.validate()
                 result = jwt.encode(
@@ -328,6 +326,10 @@ class Session:
     # ------
 
     @property
+    def _sid(self) -> str:
+        return str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), ":".join(self._trace)))
+
+    @property
     def value(self) -> dict:
         """
         :returns: Isolated dictionary of JWT data.
@@ -348,7 +350,7 @@ class Session:
     def options(self):
         result = {
             "version": {"value": self._config.version},
-            "sid": {"value": self.sid},
+            "sid": {"value": self._sid},
             "trace": {"validate": self._trace_validate}
         }
         if isinstance(self._config.audience, list):
@@ -356,7 +358,5 @@ class Session:
         return result
 
     @property
-    def sid(self) -> str:
-        if self._sid is None:
-            self._sid = str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), ":".join(self._trace)))
-        return self._sid
+    def name(self):
+        return self._config.keys.name
