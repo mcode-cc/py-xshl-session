@@ -1,5 +1,7 @@
 import time
 from typing import Union
+import asyncio
+import aiohttp
 
 import requests
 from xshl.target import Target
@@ -17,6 +19,20 @@ DEFAULT_KEYS_TTL = 60 * 60  # Default update after 1 hour
 #     **item, **item["@context"]
 # )
 # """
+
+async def fetch(url, session):
+    async with session.get(url) as response:
+        return url, await response.text()
+
+
+async def loader_reference(links):
+    async with aiohttp.ClientSession() as session:
+        results = []
+        for link in links:
+            results.append(fetch(link, session))
+        return await asyncio.gather(*results)
+
+# asyncio.run(loader_reference(urls))
 
 
 class Keys:
