@@ -7,6 +7,18 @@ from authlib.jose import JsonWebKey, KeySet, Key
 
 DEFAULT_KEYS_TTL = 60 * 60  # Default update after 1 hour
 
+# """
+# /reference/api/2/latest/text/i3a.json?target=auth:w3@jwks
+# API_HOST = os.getenv("REFERENCE_API_HOST")
+# API_REFERENCE = API_HOST + "/reference/api/2/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"
+# url = API_REFERENCE.format(
+#     version=item.get("@id", "latest"),
+#     ext=item["@context"].pop("ext", ".json"),
+#     **item, **item["@context"]
+# )
+# """
+
+
 
 class Keys:
     def __init__(self, target: Target, url: str, ttl: int = DEFAULT_KEYS_TTL):
