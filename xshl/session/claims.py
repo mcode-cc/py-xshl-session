@@ -1,13 +1,10 @@
-import uuid
-
 from authlib.jose import JWTClaims
-from authlib.jose.errors import InvalidClaimError
 
 
 class SessionClaims(JWTClaims):
     REGISTERED_CLAIMS = ["iss", "sub", "aud", "exp", "nbf", "iat", "jti",  # Default JWT claims
                          "version", "sid", "scope", "location", "type", "trace", "_scope",  # System claims
-                         "_meta", "_payloads"]  # Data claims
+                         "_payloads"]  # Data claims
     REQUIRED_CLAIMS = ["iss", "aud", "exp", "nbf", "iat", "jti", "sid"]
 
     def __init__(self, payload, header=None, options=None, params=None):
@@ -26,9 +23,3 @@ class SessionClaims(JWTClaims):
             super(SessionClaims, self).__setitem__(name, value)
         else:
             super().__setattr__(name, value)
-
-    def validate_iss(self):
-        try:
-            uuid.UUID(self.get("iss"))
-        except ValueError:
-            raise InvalidClaimError("iss")

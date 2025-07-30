@@ -81,16 +81,22 @@ class Session:
     def __init__(self, config: ConfigSession, *args):
         self._config = config
         self._trace = self.trace_cls(*args)
-        self._claims = self.claims_cls(payload={}, header=config.header)
+        self._claims = self.claims_cls(
+            payload={
+                "iss": self._config.app,
+                "sub": DEFAULT_UID,
+                "aud": DEFAULT_STR,
+                "sid": str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(self._trace))),
+                "version": self._config.version
+            },
+            header=config.header
+        )
 
     def __add__(self, other: Union['Session', str]):
         """
-        Combines attributes ("_payloads", "_meta", "scope", "_scope") the current and transmitted session or JWT.
+        Combines attributes ("aud", "sub", "_payloads", "scope", "_scope") the current and transmitted session or JWT.
         """
-        _claims = None
-        if isinstance(other, Session):
-            _claims = other._claims
-        elif isinstance(other, str):
+        if isinstance(other, str):
             try:
                 _claims = jwt.decode(
                     other, key=self._config.keys(), claims_options=self.options, claims_cls=self.claims_cls
@@ -100,28 +106,22 @@ class Session:
                 log.debug(claim)
             except Exception as e:
                 log.warning(e)
+            else:
+                for attribute in ["aud", "sub", "_payloads", "_meta", "scope", "_scope"]:
+                    if attribute in _claims:
+                        if isinstance(_claims[attribute], dict) and isinstance(self._claims.get(attribute), dict):
+                            setattr(self._claims, attribute, dict_merge(self._claims[attribute], _claims[attribute]))
+                        # summing lists without duplicate and maintaining order
+                        elif isinstance(_claims[attribute], list) and isinstance(self._claims.get(attribute), list):
+                            setattr(
+                                self._claims, attribute, list(set(self._claims.get([attribute]) + _claims[attribute]))
+                            )
+                        else:
+                            setattr(self._claims, attribute, _claims[attribute])
         else:
             raise TypeError(
-                "can only concatenate '{}' or 'str' (not '{}') to str".format(self.__name__, type(other).__name__)
+                "can only concatenate 'str' (not '{}')".format(type(other).__name__)
             )
-
-        if _claims is not None:
-            for attribute in ["_payloads", "_meta", "scope", "_scope"]:
-                if attribute in _claims:
-                    if isinstance(_claims[attribute], dict) and isinstance(self._claims.get(attribute), dict):
-                        setattr(self._claims, attribute, dict_merge(self._claims[attribute], _claims[attribute]))
-                    # We add up the scope if at least one of them is a list.
-                    elif isinstance(_claims[attribute], list) or isinstance(self._claims.get(attribute), list):
-                        if isinstance(_claims[attribute], list):
-                            new = _claims[attribute]
-                            addend = self._claims.get(attribute)
-                        else:
-                            new = self._claims.get(attribute)
-                            addend = _claims[attribute]
-                        new += addend if isinstance(addend, list) else [addend] if isinstance(addend, str) else []
-                        setattr(self._claims, attribute, list(set(new)))
-                    else:
-                        setattr(self._claims, attribute, _claims[attribute])
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
@@ -160,16 +160,15 @@ class Session:
 
     # Service JWT claims
     @property
-    def scope(self) -> Union[list, str]:
+    def scope(self) -> list:
         return self._claims.get("scope", None)
 
     @scope.setter
-    def scope(self, value: Union[list, str]):
-        if isinstance(value, list) and len(value) == 1:
-            # Строка - если список состоит из 1 значения
-            self._claims.scope = value[0]
-        else:
+    def scope(self, value: list):
+        if isinstance(value, list):
             self._claims.scope = value
+        else:
+            raise TypeError("scope must be 'list' (not '{}')".format(type(value).__name__))
 
     @property
     def path(self) -> str:
@@ -201,19 +200,19 @@ class Session:
         return self._claims.get("trace", DEFAULT_STR)
 
     @property
-    def future_scope(self):
+    def request_scope(self):
         return self._claims["_scope"] if "_scope" in self._claims else ""
 
-    @future_scope.setter
-    def future_scope(self, value: str):
+    @request_scope.setter
+    def request_scope(self, value: str):
         """if setter None or null value, deleting "_scope"""""
         if value:
             self._claims["_scope"] = value
         else:
-            del self.future_scope
+            del self.request_scope
 
-    @future_scope.deleter
-    def future_scope(self):
+    @request_scope.deleter
+    def request_scope(self):
         del self._claims["_scope"]
 
     # ------
@@ -304,11 +303,7 @@ class Session:
                 self._claims.iat = _t
                 self._claims.exp = _t + self._config.expires
                 self._claims.nbf = _t
-                self._claims.iss = self._config.app
                 self._claims.trace = self._trace.get(self._claims.jti)
-                self._claims.sid = self._sid
-                self._claims.version = self._config.version
-                self._claims.validate()
                 result = jwt.encode(
                     header=self._config.header,
                     payload=datetime_as_8601(self.value),
@@ -320,25 +315,7 @@ class Session:
             return result
         raise ValueError("Cannot return JWT: 'key' (private key) is not initialized.")
 
-    @jwt.setter
-    def jwt(self, value: str):
-        try:
-            _claims = jwt.decode(
-                value, key=self._config.keys(), claims_options=self.options, claims_cls=self.claims_cls
-            )
-            _claims.validate()
-        except InvalidClaimError as claim:
-            log.debug(claim)
-        except Exception as e:
-            log.warning(e)
-        else:
-            self._claims = _claims
-
     # ------
-
-    @property
-    def _sid(self) -> str:
-        return str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(self._trace)))
 
     @property
     def value(self) -> dict:
@@ -347,22 +324,12 @@ class Session:
         """
         return deepcopy(dict(self._claims))
 
-    def expire(self, _format="%a, %d %b %Y %H:%M:%S GMT") -> str:
-        return time.strftime(_format, time.gmtime(self._claims.exp))
-
-    # def get_trace(self, jti: str):
-    #     """:returns: UUIDv5 string from trace args with spacename jti"""
-    #     return str(uuid.uuid5(uuid.UUID(jti), ":".join(map(str, self._trace))))
-
-    # def _trace_validate(self, claims: JWTClaims, value: str):
-    #     return self.get_trace(claims.get("jti")) == value
-
     @property
     def options(self):
         result = {
             "version": {"value": self._config.version},
-            "sid": {"value": self._sid},
-            "trace": {"validate": self._trace.validate}
+            "trace": {"validate": self._trace.validate},
+            "sid": {"value": self.sid}
         }
         if isinstance(self._config.audience, list):
             result = {"values": self._config.audience}
