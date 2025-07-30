@@ -82,6 +82,32 @@ class Session:
             header=config.header
         )
 
+    def __contains__(self, item):
+        return item in self._claims
+
+    def __getitem__(self, item):
+        _item = getattr(self, item, None)
+        if _item is not None and not isinstance(_item, MethodType):
+            return _item
+
+    def __setitem__(self, key, value):
+        _item = getattr(self, key)
+        if not isinstance(_item, MethodType):
+            return setattr(self, key, value)
+
+    def __iter__(self):
+        temp = self.__data
+        for k, v in temp.items():
+            if v is None:
+                continue
+            yield k, v
+
+    @property
+    def __data(self) -> dict:
+        _data = vars(self)
+        _data.update(_data.pop("other", {}))
+        return _data
+
     def __add__(self, other: str):
         """
         Combines attributes ("aud", "sub", "_payloads", "scope", "_scope") the current and transmitted session or JWT.
@@ -163,11 +189,14 @@ class Session:
     @property
     def path(self) -> str:
         """JWT location"""
-        return self._claims.get("location", DEFAULT_STR)
+        return self._claims.get("location", None)
 
     @path.setter
     def path(self, value: str):
-        self._claims.location = value
+        if value:
+            self._claims.location = value
+        else:
+            del self.path
 
     @path.deleter
     def path(self):
