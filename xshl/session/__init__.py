@@ -107,15 +107,7 @@ class Session:
                     else:
                         setattr(self._claims, attribute, _claims[attribute])
 
-    def update(self, path: str = None, scope: list = None, **kwargs):
-        if path is not None:
-            self.path = path
-        if scope is not None:
-            if self.scope is None:
-                self.scope = scope
-            else:
-                self.scope = list(set(self.scope + scope)) if isinstance(self.scope, list) \
-                    else list(set([self.scope] + scope))
+    def update(self, **kwargs):
         for k, v in kwargs.items():
             if hasattr(self, k):
                 # If the current and new values are a dictionary, use dictionary merging.
