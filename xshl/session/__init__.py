@@ -146,6 +146,9 @@ class Session:
         self._claims.aud = value
 
     # ------
+    @property
+    def sid(self):
+        return self._claims.sid
 
     # Service JWT claims
     @property
