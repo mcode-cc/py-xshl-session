@@ -145,6 +145,7 @@ class Session:
 
     @aud.setter
     def aud(self, value):
+        # TODO check self.audience
         self._claims.aud = value
 
     # ------
@@ -155,12 +156,13 @@ class Session:
     # Service JWT claims
     @property
     def scope(self) -> list:
+        # WTF?!! Why not []
         return self._claims.get("scope", None)
 
     @scope.setter
     def scope(self, value: list):
         if isinstance(value, list):
-            self._claims.scope = value
+            self._claims.scope = map(str, value)  # sugar - baby
         else:
             raise TypeError("scope must be 'list' (not '{}')".format(type(value).__name__))
 
