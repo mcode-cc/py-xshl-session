@@ -334,12 +334,12 @@ class Session:
     def expire(self, _format="%a, %d %b %Y %H:%M:%S GMT") -> str:
         return time.strftime(_format, time.gmtime(self._claims.exp))
 
-    def get_trace(self, *args):
+    def get_trace(self, jti: str):
         """:returns: UUIDv5 string from trace args with spacename jti"""
-        return str(uuid.uuid5(uuid.UUID(self._claims.jti), ":".join(map(str, args))))
+        return str(uuid.uuid5(uuid.UUID(jti), ":".join(map(str, self._trace))))
 
-    def _trace_validate(self, _: JWTClaims, value: str):
-        return self.get_trace(*self._trace) == value
+    def _trace_validate(self, claims: JWTClaims, value: str):
+        return self.get_trace(claims.get("jti")) == value
 
     @property
     def options(self):
