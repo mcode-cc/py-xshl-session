@@ -7,19 +7,9 @@ import requests
 from xshl.target import Target
 from authlib.jose import JsonWebKey, KeySet, Key
 
-DEFAULT_KEYS_TTL = 60 * 60  # Default update after 1 hour
+DEFAULT_KEYS_TTL = 60  # Default update times a minute
+API_REFERENCE = "/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"
 
-
-# """
-# /latest/text/i3a.json?target=auth:w3@jwks
-# REFERENCE_API_URL = os.getenv("REFERENCE_API_URL")
-# API_REFERENCE = REFERENCE_API_URL + "/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"
-# url = API_REFERENCE.format(
-#     version=item.get("@id", "latest"),
-#     ext=item["@context"].pop("ext", ".json"),
-#     **item, **item["@context"]
-# )
-# """
 
 async def fetch(url, session):
     async with session.get(url) as response:
@@ -34,55 +24,35 @@ async def loader_reference(links):
         return await asyncio.gather(*results)
 
 
-# asyncio.run(loader_reference(urls))
-
-
 class Keys:
-    def __init__(self, target: Target, url: str, ttl: int = DEFAULT_KEYS_TTL):
-        """
-        Keys from API, response must be formate JWK.
-        Args:
-            target: An object of the class "Target" from xshl.target
-                - Required: 'spot', 'base', 'entity'
-                - Optional: '@context', '@id'
-                Example:
-                    {
-                        "spot": "auth",
-                        "base": "prod",
-                        "entity": "service1",
-                        "@context": {
-                            "source": "text",
-                            "path": "/keys",
-                            "ext": ".json"
-                        }
-                    }
-
-            url: API endpoint template with placeholders. Must include host.
-                Example:
-                    "https://api.example.com/v2/{@id}/{path}{ext}?target={spot}:{entity}@{base}"
-
-            ttl: Time-to-live in seconds for cached public keys (refresh frequency)
-        """
-        if not any(item in ["spot", "base", "entity"] for item in dict(target)):
-            raise ValueError("The target is incorrect. Does not contain 1 or more required properties")
-        self.target = target
+    def __init__(self, name: str, url: str, ttl: int = DEFAULT_KEYS_TTL):
+        self.name = name
         self.url = url
         self._ttl = ttl
-        self.name = target.entity
         self._update = 0
         self._keys = KeySet([])
+        self.load()
+
+    def load(self, background: bool = False):
+        if background:
+            pass  # asyncio.run(loader_reference(urls))
+        else:
+            response = requests.get(self.url)
+            if response.status_code == 200:
+                self._keys = JsonWebKey.import_key_set(response.json())
+                self._update = time.time()
+
+    @property
+    def update(self) -> bool:
+        return self._update + self._ttl < time.time()
 
     @property
     def _data(self) -> KeySet:
         """
         Returns a **KeySet** and self updates keys every "self._ttl" seconds.
         """
-        if self._update + self._ttl < time.time():
-            contex = self.target["@context"] if "@context" in self.target else {}
-            response = requests.get(self.url.format(**dict(self.target), **contex))
-            if response.status_code == 200:
-                self._keys = JsonWebKey.import_key_set(response.json())
-                self._update = time.time()
+        if self.update:
+            self.load(background=True)
         return self._keys
 
     def __call__(self, kid: str = None) -> Union[Key, KeySet]:
@@ -100,3 +70,16 @@ class Keys:
         else:
             result = self._data
         return result
+
+
+class ReferenceKeys(Keys):
+    def __init__(self, target: Target, url: str, ttl: int = DEFAULT_KEYS_TTL):
+        super(ReferenceKeys, self).__init__(target.entity, url + self.api_path(dict(target)), ttl)
+        self.target = target
+
+    def api_path(self, item: dict) -> str:
+        return API_REFERENCE.format(
+            version=item.get("@id", "latest"),
+            ext=item.get("@context", {}).pop("ext", ".json"),
+            **item, **item.get("@context", {})
+        )
