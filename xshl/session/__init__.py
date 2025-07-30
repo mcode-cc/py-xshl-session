@@ -17,10 +17,6 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
 JWE = JsonWebEncryption()
 
-NAME_ENCRYPT = "{}a"
-NAME_KEY = "{}k"
-NAME_TOKEN = "{}t"
-
 DEFAULT_SESSION_VERSION = 1
 DEFAULT_SESSION_EXPIRES = 120
 DEFAULT_UID = "00000000-0000-0000-0000-000000000000"
@@ -86,7 +82,7 @@ class Session:
             header=config.header
         )
 
-    def __add__(self, other: Union['Session', str]):
+    def __add__(self, other: str):
         """
         Combines attributes ("aud", "sub", "_payloads", "scope", "_scope") the current and transmitted session or JWT.
         """
@@ -112,10 +108,6 @@ class Session:
                             )
                         else:
                             setattr(self._claims, attribute, _claims[attribute])
-        else:
-            raise TypeError(
-                "can only concatenate 'str' (not '{}')".format(type(other).__name__)
-            )
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
@@ -136,7 +128,7 @@ class Session:
         return self._claims.sub
 
     @sub.setter
-    def sub(self, value):
+    def sub(self, value: str):
         self._claims.sub = value
 
     @property
@@ -144,9 +136,9 @@ class Session:
         return self._claims.aud
 
     @aud.setter
-    def aud(self, value):
-        # TODO check self.audience
-        self._claims.aud = value
+    def aud(self, value: str):
+        if self._config.audience is None or value in self._config.audience:
+            self._claims.aud = value
 
     # ------
     @property
@@ -156,15 +148,17 @@ class Session:
     # Service JWT claims
     @property
     def scope(self) -> list:
-        # WTF?!! Why not []
-        return self._claims.get("scope", None)
+        if "scope" not in self._claims:
+            self._claims["scope"] = []
+        return self._claims.scope
 
     @scope.setter
     def scope(self, value: list):
-        if isinstance(value, list):
-            self._claims.scope = map(str, value)  # sugar - baby
-        else:
-            raise TypeError("scope must be 'list' (not '{}')".format(type(value).__name__))
+        if value is None:
+            self._claims["scope"] = []
+        elif isinstance(value, list):
+            if len(value) > 0:
+                self._claims["scope"] = list(map(str, value))
 
     @property
     def path(self) -> str:
@@ -180,23 +174,22 @@ class Session:
         del self._claims["location"]
 
     @property
-    def response_type(self):
-        return self._claims.get("type", DEFAULT_STR)
+    def response_type(self) -> Optional[str]:
+        return self._claims.get("type", None)
 
     @response_type.setter
     def response_type(self, value: str):
-        self._claims.type = value
+        if value:
+            self._claims.type = value
+        else:
+            del self.response_type
 
     @response_type.deleter
     def response_type(self):
         del self._claims.type
 
     @property
-    def trace(self) -> str:
-        return self._claims.get("trace", DEFAULT_STR)
-
-    @property
-    def request_scope(self):
+    def request_scope(self) -> str:
         return self._claims["_scope"] if "_scope" in self._claims else ""
 
     @request_scope.setter
@@ -229,21 +222,6 @@ class Session:
     @payloads.deleter
     def payloads(self):
         del self._claims["_payloads"]
-
-    # ------
-
-    # NAMES
-    @property
-    def encrypt(self) -> str:
-        return NAME_ENCRYPT.format(self.name)
-
-    @property
-    def key(self) -> str:
-        return NAME_KEY.format(self.name)
-
-    @property
-    def token(self) -> str:
-        return NAME_TOKEN.format(self.name)
 
     # ------
 
@@ -290,6 +268,7 @@ class Session:
             result = None
             log.warning(e)
         return result
+
     # ------
 
     @property
