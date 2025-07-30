@@ -27,6 +27,18 @@ DEFAULT_UID = "00000000-0000-0000-0000-000000000000"
 DEFAULT_STR = "undef"
 
 
+class Trace:
+    def __init__(self, *args):
+        self._items = args
+
+    def get(self, value: str):
+        """:returns: UUIDv5 string from trace args with spacename jti"""
+        return str(uuid.uuid5(uuid.UUID(value), ":".join(map(str, self._items))))
+
+    def validate(self, claims: JWTClaims, value: str):
+        return self.get(claims.get("jti")) == value
+
+
 class ConfigSession:
     def __init__(self, keys: Keys, app: uuid.UUID = None, audience: list = None, header: dict = None,
                  version: int = DEFAULT_SESSION_VERSION, expires: int = DEFAULT_SESSION_EXPIRES,
@@ -61,10 +73,11 @@ class ConfigSession:
 
 class Session:
     claims_cls: Type[JWTClaims] = SessionClaims
+    trace_cls: Type[Trace] = Trace
 
-    def __init__(self, config: ConfigSession, trace: list):
+    def __init__(self, config: ConfigSession, *args):
         self._config = config
-        self._trace = trace
+        self._trace = self.trace_cls(*args)
         self._claims = self.claims_cls(payload={}, header=config.header)
 
     def __add__(self, other: Union['Session', str]):
@@ -289,7 +302,7 @@ class Session:
                 self._claims.exp = _t + self._config.expires
                 self._claims.nbf = _t
                 self._claims.iss = self._config.app
-                self._claims.trace = self.get_trace(self._trace)
+                self._claims.trace = self._trace.get(self._claims.jti)
                 self._claims.sid = self._sid
                 self._claims.version = self._config.version
                 self._claims.validate()
@@ -334,19 +347,19 @@ class Session:
     def expire(self, _format="%a, %d %b %Y %H:%M:%S GMT") -> str:
         return time.strftime(_format, time.gmtime(self._claims.exp))
 
-    def get_trace(self, jti: str):
-        """:returns: UUIDv5 string from trace args with spacename jti"""
-        return str(uuid.uuid5(uuid.UUID(jti), ":".join(map(str, self._trace))))
+    # def get_trace(self, jti: str):
+    #     """:returns: UUIDv5 string from trace args with spacename jti"""
+    #     return str(uuid.uuid5(uuid.UUID(jti), ":".join(map(str, self._trace))))
 
-    def _trace_validate(self, claims: JWTClaims, value: str):
-        return self.get_trace(claims.get("jti")) == value
+    # def _trace_validate(self, claims: JWTClaims, value: str):
+    #     return self.get_trace(claims.get("jti")) == value
 
     @property
     def options(self):
         result = {
             "version": {"value": self._config.version},
             "sid": {"value": self._sid},
-            "trace": {"validate": self._trace_validate}
+            "trace": {"validate": self._trace.validate}
         }
         if isinstance(self._config.audience, list):
             result = {"values": self._config.audience}
