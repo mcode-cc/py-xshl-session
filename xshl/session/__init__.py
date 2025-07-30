@@ -33,10 +33,13 @@ class Trace:
 
     def get(self, value: str):
         """:returns: UUIDv5 string from trace args with spacename jti"""
-        return str(uuid.uuid5(uuid.UUID(value), ":".join(map(str, self._items))))
+        return str(uuid.uuid5(uuid.UUID(value), str(self)))
 
     def validate(self, claims: JWTClaims, value: str):
         return self.get(claims.get("jti")) == value
+
+    def __str__(self):
+        return ":".join(map(str, self._items))
 
 
 class ConfigSession:
@@ -335,7 +338,7 @@ class Session:
 
     @property
     def _sid(self) -> str:
-        return str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), ":".join(self._trace)))
+        return str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(self._trace)))
 
     @property
     def value(self) -> dict:
