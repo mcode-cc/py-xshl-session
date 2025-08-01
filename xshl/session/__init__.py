@@ -3,8 +3,7 @@ import os
 import time
 import uuid
 from uuid import NAMESPACE_OID
-from copy import deepcopy
-from typing import Optional, Type, Union
+from typing import Optional, Type, Union, KeysView
 
 from authlib.jose import JsonWebEncryption, JsonWebKey, Key, JWTClaims, jwt
 from authlib.jose.errors import InvalidClaimError
@@ -41,7 +40,7 @@ class Trace:
 class ConfigSession:
     def __init__(self, keys: Keys, app: uuid.UUID = None, audience: list = None, header: dict = None,
                  version: int = DEFAULT_SESSION_VERSION, expires: int = DEFAULT_SESSION_EXPIRES,
-                 key: Optional[bytes, Key] = None):
+                 key: Union[bytes, Key] = None):
         """
         :param keys: The "Keys" class containing public keys
         :param app: Application UUID for iss encoding JWT
@@ -82,12 +81,6 @@ class Session:
             header=config.header
         )
 
-    @property
-    def __data(self) -> dict:
-        _data = vars(self)
-        _data.update(_data.pop("other", {}))
-        return _data
-
     def __add__(self, other: str):
         """
         Combines attributes ("aud", "sub", "_payloads", "scope", "_scope") the current and transmitted session or JWT.
@@ -114,6 +107,27 @@ class Session:
                             )
                         else:
                             setattr(self._claims, attribute, _claims[attribute])
+
+    def __len__(self) -> int:
+        return len(self._claims)
+
+    def __contains__(self, item):
+        return item in self._claims
+
+    def __getitem__(self, item):
+        return self._claims.get(item, None)
+
+    def __iter__(self):
+        for k, v in self._claims.items():
+            if v is None:
+                continue
+            yield k, v
+
+    def keys(self) -> KeysView[str]:
+        """
+        To unpack: **session
+        """
+        return self._claims.keys()
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
@@ -217,14 +231,16 @@ class Session:
 
     # Data JWT claims
     @property
-    def payloads(self) -> dict:
-        return deepcopy(self._claims.get("_payloads", {}))
+    def payloads(self) -> list:
+        if "_payloads" not in self._claims:
+            setattr(self._claims, "_payloads", {})
+        return self._claims["_payloads"]
 
     @payloads.setter
     def payloads(self, value: dict):
         """if setter None or null value, deleting "_payloads"""""
         if value:
-            setattr(self._claims, "_payloads", value)
+            self._claims["_payloads"] = value
         else:
             del self.payloads
 
@@ -279,13 +295,6 @@ class Session:
         return result
 
     # ------
-
-    @property
-    def value(self) -> dict:
-        """
-        :returns: Isolated dictionary of JWT data.
-        """
-        return deepcopy(dict(self._claims))
 
     @property
     def options(self):
