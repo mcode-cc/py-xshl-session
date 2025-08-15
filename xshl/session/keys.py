@@ -13,6 +13,11 @@ from authlib.jose import JsonWebKey, KeySet, Key
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
+log.addHandler(console_handler)
 
 DEFAULT_KEYS_TTL = 60  # Default update times a minute
 API_REFERENCE = "/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"

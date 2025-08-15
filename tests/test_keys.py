@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch, MagicMock, AsyncMock, Mock
 import time
 import requests
+from aiohttp import ClientConnectorDNSError
 from authlib.jose import JsonWebKey
 
 from xshl.session.keys import Keys, KeySet, Key
@@ -78,6 +79,23 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(keys._keys)
 
     @patch("requests.get")
+    def test_update_with_invalid_url(self, mock_get):
+        mock_get.return_value = self._create_mock_response(200, self.keys_data)
+        level = "WARNING"
+
+        keys = Keys(name=self.test_name, url=self.valid_url)
+        self.assertTrue(len(keys().keys) > 0)
+
+        with self.assertLogs("xshl.session.keys", level=level) as captured:
+            keys.url = self.invalid_url
+            keys._update = 0
+            keys()
+            time.sleep(0.1)
+            self.assertTrue(len(captured.records) > 0)
+            self.assertEqual(captured.records[0].levelname, level)
+            self.assertIsInstance(captured.records[0].msg, ClientConnectorDNSError)
+
+    @patch("requests.get")
     def test_get_data(self, mock_get):
         mock_get.return_value = self._create_mock_response(200, self.keys_data)
 
@@ -100,6 +118,7 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
         mock_asinc_response = AsyncMock(name="MockAsincResponse")
         mock_asinc_response.status = 200
         mock_asinc_response.json.return_value = self.keys_data_new
+        mock_asinc_response.raise_for_status = Mock(return_value=None)
         mock_asinc_get = AsyncMock(name="MockAsincGet")
         mock_asinc_get.__aenter__.side_effect = delayed_response
         mock_asinc_get.__aenter__.return_value = mock_asinc_response
@@ -134,7 +153,6 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
         result = keys(kid="nonexistent")
 
         self.assertIsNone(result)
-
 
 if __name__ == "__main__":
     unittest.main()
