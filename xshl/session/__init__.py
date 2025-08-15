@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import uuid
+from copy import deepcopy
 from uuid import NAMESPACE_OID
 from typing import Optional, Type, Union, KeysView
 
@@ -14,8 +15,8 @@ from .utilites import datetime_as_8601, dict_merge
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
-JWE = JsonWebEncryption()
 
+JWE = JsonWebEncryption()
 DEFAULT_SESSION_VERSION = 1
 DEFAULT_SESSION_EXPIRES = 120
 DEFAULT_UID = "00000000-0000-0000-0000-000000000000"
@@ -286,7 +287,7 @@ class Session:
             self._claims.trace = self._trace.get(self._claims.jti)
             result = jwt.encode(
                 header=self._config.header,
-                payload=datetime_as_8601(self.value),
+                payload=datetime_as_8601(deepcopy(dict(self._claims))),
                 key=self._config.private
             ).decode()
         except Exception as e:

@@ -1,27 +1,21 @@
+import logging
+import os
 import time
-from typing import Union
 import asyncio
-import aiohttp
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+from typing import Union, Optional
 
 import requests
+import aiohttp
 from xshl.target import Target
 from authlib.jose import JsonWebKey, KeySet, Key
 
+log = logging.getLogger(__name__)
+log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
+
 DEFAULT_KEYS_TTL = 60  # Default update times a minute
 API_REFERENCE = "/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"
-
-
-async def fetch(url, session):
-    async with session.get(url) as response:
-        return url, await response.text()
-
-
-async def loader_reference(links):
-    async with aiohttp.ClientSession() as session:
-        results = []
-        for link in links:
-            results.append(fetch(link, session))
-        return await asyncio.gather(*results)
 
 
 class Keys:
@@ -30,30 +24,58 @@ class Keys:
         self.url = url
         self._ttl = ttl
         self._update = 0
-        self._keys = KeySet([])
+        self._task = False
+        self._lock = Lock()
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._keys: Optional[KeySet] = None
+
         self.load()
+
+    async def _load(self):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url, ssl=False) as response:
+                    response.raise_for_status()  # checking API availability
+                    json_data = await response.json()
+                    with self._lock:
+                        self._keys = JsonWebKey.import_key_set(json_data)
+                        self._update = time.time()
+        except Exception as e:
+            log.warning(e)
+        finally:
+            self._task = False
 
     def load(self, background: bool = False):
         if background:
-            pass  # asyncio.run(loader_reference(urls))
+            if not self._task:
+                self._task = True
+                try:
+                    asyncio.get_running_loop()
+                    asyncio.create_task(self._load())
+                except RuntimeError:  # if RuntimeError means the code is synchronous
+                    self._executor.submit(asyncio.run, self._load())
         else:
             response = requests.get(self.url)
             if response.status_code == 200:
-                self._keys = JsonWebKey.import_key_set(response.json())
-                self._update = time.time()
+                with self._lock:
+                    self._keys = JsonWebKey.import_key_set(response.json())
+                    self._update = time.time()
+            else:
+                response.raise_for_status()
 
     @property
-    def update(self) -> bool:
-        return self._update + self._ttl < time.time()
+    def updated(self) -> bool:
+        return self._update + self._ttl > time.time()
 
     @property
     def _data(self) -> KeySet:
         """
         Returns a **KeySet** and self updates keys every "self._ttl" seconds.
         """
-        if self.update:
+        if not self.updated:
             self.load(background=True)
-        return self._keys
+        with self._lock:
+            return self._keys
 
     def __call__(self, kid: str = None) -> Union[Key, KeySet]:
         """
@@ -70,6 +92,12 @@ class Keys:
         else:
             result = self._data
         return result
+
+    def __del__(self):
+        try:
+            self._executor.shutdown()
+        except RuntimeError:
+            pass
 
 
 class ReferenceKeys(Keys):
