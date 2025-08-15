@@ -23,3 +23,10 @@ class SessionClaims(JWTClaims):
             super(SessionClaims, self).__setitem__(name, value)
         else:
             super().__setattr__(name, value)
+
+    def validate(self, now=None, leeway=0):
+        super().validate(now, leeway)
+        # Validate custom claims in REGISTERED_CLAIMS
+        for key in self.options.keys():
+            if key not in ["aud", "exp", "nbf", "iat"] and key in self.REGISTERED_CLAIMS:
+                self._validate_claim_value(key)

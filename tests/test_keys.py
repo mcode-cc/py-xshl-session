@@ -108,7 +108,6 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
     @patch("aiohttp.ClientSession")
     @patch("requests.get")
     def test_multiple_calls(self, mock_get, mock_client_session):
-
         # function for simulating a delayed response from the api
         async def delayed_response():
             await asyncio.sleep(0.5)
@@ -153,6 +152,7 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
         result = keys(kid="nonexistent")
 
         self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()
