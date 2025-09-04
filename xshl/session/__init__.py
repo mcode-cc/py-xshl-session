@@ -5,13 +5,15 @@ import uuid
 from copy import deepcopy
 from uuid import NAMESPACE_OID
 from typing import Optional, Type, Union, KeysView
+from datetime import datetime
 
+import json
 from authlib.jose import JsonWebEncryption, JsonWebKey, Key, JWTClaims, jwt
 from authlib.jose.errors import InvalidClaimError
+from xshl.target import Target
 
 from .claims import SessionClaims
 from .keys import Keys
-from .utilites import datetime_as_8601, dict_merge
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.WARNING if os.getenv("DEBUG", "0") == "0" else logging.DEBUG)
@@ -21,6 +23,62 @@ DEFAULT_SESSION_VERSION = 1
 DEFAULT_SESSION_EXPIRES = 120
 DEFAULT_UID = "00000000-0000-0000-0000-000000000000"
 DEFAULT_STR = "undef"
+
+
+def dict_merge(first: dict, second: dict) -> dict:
+    """
+    Recursively combines two dicts. Values that are not a dict are replaced from second.
+    Args:
+        first: Basic dict
+        second: The dict that will be combined with the base one.
+
+    Returns:
+        New combined dict (original dict are not changed)
+    """
+    result = deepcopy(first)
+    for key, value in second.items():
+        if key in result:
+            if isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = dict_merge(result[key], value)
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
+class JsonDumps:
+    def __init__(self, df=None):
+        """
+        :param df: default function for dumps
+        """
+        self.original_dumps = json.dumps
+
+        if df is None:
+            def jdf(value):
+                try:
+                    if isinstance(value, datetime):
+                        return value.isoformat()
+                    elif isinstance(value, Target):
+                        return str(value)
+                    else:
+                        return vars(value)
+                except Exception as e:
+                    raise type(e)("JSON serialization failed: {}".format(e)) from e
+            df = jdf
+
+        def dumps(*args, default=None, **kwargs):
+            if default is None:
+                default = df
+            return self.original_dumps(*args, default=default, **kwargs)
+
+        self.dumps = dumps
+
+    def __enter__(self):
+        json.dumps = self.dumps
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        json.dumps = self.original_dumps
 
 
 class Trace:
@@ -285,11 +343,10 @@ class Session:
             self._claims.exp = _t + self._config.expires
             self._claims.nbf = _t
             self._claims.trace = self._trace.get(self._claims.jti)
-            result = jwt.encode(
-                header=self._config.header,
-                payload=datetime_as_8601(deepcopy(dict(self._claims))),
-                key=self._config.private
-            ).decode()
+            with JsonDumps():
+                result = jwt.encode(
+                    header=self._config.header, payload=dict(self._claims), key=self._config.private
+                ).decode()
         except Exception as e:
             result = None
             log.warning(e)
