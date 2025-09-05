@@ -85,7 +85,7 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
 
         keys = Keys(name=self.test_name, url=self.valid_url)
         self.assertTrue(len(keys().keys) > 0)
-
+        mock_get.return_value = self._create_mock_response(400, self.keys_data)
         with self.assertLogs("xshl.session.keys", level=level) as captured:
             keys.url = self.invalid_url
             keys._update = 0
@@ -152,6 +152,45 @@ class TestKeys(unittest.IsolatedAsyncioTestCase):
         result = keys(kid="nonexistent")
 
         self.assertIsNone(result)
+
+    @patch("requests.get")
+    def test_requests_verify_tls_flag(self, mock_get):
+        mock_get.return_value = self._create_mock_response(200, self.keys_data)
+        Keys(name=self.test_name, url=self.valid_url, verify_tls=True)
+        mock_get.assert_called_with(self.valid_url, verify=True)
+
+        mock_get.reset_mock()
+        Keys(name=self.test_name, url=self.valid_url, verify_tls=False)
+        mock_get.assert_called_with(self.valid_url, verify=False)
+
+    @patch("aiohttp.ClientSession")
+    @patch("requests.get")
+    async def test_aiohttp_verify_tls_flag(self, mock_get, mock_client_session):
+        mock_get.return_value = self._create_mock_response(200, self.keys_data)
+
+        # Prepare async client session mocks
+        mock_asinc_response = AsyncMock(name="MockAsincResponse")
+        mock_asinc_response.status = 200
+        mock_asinc_response.json.return_value = self.keys_data_new
+        mock_asinc_response.raise_for_status = Mock(return_value=None)
+        mock_asinc_get = AsyncMock(name="MockAsincGet")
+        mock_asinc_get.__aenter__.return_value = mock_asinc_response
+        mock_asinc_session = AsyncMock(name="MockAsincSession")
+        mock_asinc_session.get = Mock(name="MockSessionGet", return_value=mock_asinc_get)
+        mock_client_session.return_value.__aenter__.return_value = mock_asinc_session
+
+        keys = Keys(name=self.test_name, url=self.valid_url, verify_tls=False)
+        keys._update = 0
+        keys()
+        await asyncio.sleep(0)  # yield to event loop
+        mock_asinc_session.get.assert_called_with(self.valid_url, ssl=False)
+
+        # Now with verify_tls=True
+        keys = Keys(name=self.test_name, url=self.valid_url, verify_tls=True)
+        keys._update = 0
+        keys()
+        await asyncio.sleep(0)
+        mock_asinc_session.get.assert_called_with(self.valid_url, ssl=True)
 
 
 if __name__ == "__main__":
