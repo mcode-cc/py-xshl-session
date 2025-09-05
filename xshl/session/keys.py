@@ -5,6 +5,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Union, Optional
+from copy import deepcopy
 
 import requests
 import aiohttp
@@ -24,10 +25,11 @@ API_REFERENCE = "/{version}/{source}/{path}{ext}?target={spot}:{entity}@{base}"
 
 
 class Keys:
-    def __init__(self, name: str, url: str, ttl: int = DEFAULT_KEYS_TTL):
+    def __init__(self, name: str, url: str, ttl: int = DEFAULT_KEYS_TTL, verify_tls: bool = True):
         self.name = name
         self.url = url
         self._ttl = ttl
+        self._verify_tls = bool(verify_tls)
         self._update = 0
         self._task = False
         self._lock = Lock()
@@ -39,7 +41,7 @@ class Keys:
     async def _load(self):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.url, ssl=False) as response:
+                async with session.get(self.url, ssl=self._verify_tls) as response:
                     response.raise_for_status()  # checking API availability
                     json_data = await response.json()
                     with self._lock:
@@ -60,7 +62,7 @@ class Keys:
                 except RuntimeError:  # if RuntimeError means the code is synchronous
                     self._executor.submit(asyncio.run, self._load())
         else:
-            response = requests.get(self.url)
+            response = requests.get(self.url, verify=self._verify_tls)
             if response.status_code == 200:
                 with self._lock:
                     self._keys = JsonWebKey.import_key_set(response.json())
@@ -106,14 +108,17 @@ class Keys:
 
 
 class ReferenceKeys(Keys):
-    def __init__(self, target: Target, trust_url: str, ttl: int = DEFAULT_KEYS_TTL):
-        super(ReferenceKeys, self).__init__(target.entity, trust_url + self.api_path(dict(target)), ttl)
+    def __init__(self, target: Target, trust_url: str, ttl: int = DEFAULT_KEYS_TTL, verify_tls: bool = True):
+        super(ReferenceKeys, self).__init__(
+            target.entity, trust_url + self.api_path(dict(target)), ttl, verify_tls
+        )
         self.target = target
 
     @staticmethod
     def api_path(item: dict) -> str:
+        context = deepcopy(item.get("@context", {}))
         return API_REFERENCE.format(
             version=item.get("@id", "latest"),
-            ext=item.get("@context", {}).pop("ext", ".json"),
-            **item, **item.get("@context", {})
+            ext=context.pop("ext", ".json"),
+            **item, **context
         )

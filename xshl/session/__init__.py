@@ -162,10 +162,11 @@ class Session:
                         # summing lists without duplicate and maintaining order
                         elif isinstance(_claims[attribute], list) and isinstance(self._claims.get(attribute), list):
                             setattr(
-                                self._claims, attribute, list(set(self._claims.get([attribute]) + _claims[attribute]))
+                                self._claims, attribute, list(set(self._claims.get(attribute) + _claims[attribute]))
                             )
                         else:
                             setattr(self._claims, attribute, _claims[attribute])
+        return self
 
     def __len__(self) -> int:
         return len(self._claims)
@@ -268,7 +269,7 @@ class Session:
 
     @response_type.deleter
     def response_type(self):
-        del self._claims.type
+        del self._claims["type"]
 
     @property
     def request_scope(self) -> str:
@@ -290,7 +291,7 @@ class Session:
 
     # Data JWT claims
     @property
-    def payloads(self) -> list:
+    def payloads(self) -> dict:
         if "_payloads" not in self._claims:
             setattr(self._claims, "_payloads", {})
         return self._claims["_payloads"]
@@ -362,7 +363,7 @@ class Session:
             "sid": {"value": self.sid}
         }
         if isinstance(self._config.audience, list):
-            result = {"values": self._config.audience}
+            result["aud"] = {"values": self._config.audience}
         return result
 
     @property
