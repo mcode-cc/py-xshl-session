@@ -254,7 +254,8 @@ class Session:
 
     @path.deleter
     def path(self):
-        del self._claims["location"]
+        if "location" in self._claims:
+            del self._claims["location"]
 
     @property
     def response_type(self) -> Optional[str]:
@@ -285,7 +286,8 @@ class Session:
 
     @request_scope.deleter
     def request_scope(self):
-        del self._claims["_scope"]
+        if "_scope" in self._claims:
+            del self._claims["_scope"]
 
     # ------
 
@@ -306,7 +308,8 @@ class Session:
 
     @payloads.deleter
     def payloads(self):
-        del self._claims["_payloads"]
+        if "_payloads" in self._claims:
+            del self._claims["_payloads"]
 
     # ------
 
