@@ -4,7 +4,7 @@ title: XSHL Session — Documentation
 
 # XSHL Session
 
-Python library for working with XSHL sessions: JWT claims, JWE payloads, and key management.
+Python library for working with sessions: JWT claims, JWE, and key management.
 
 - [Quickstart](quickstart.md)
 - [Guides](guides.md)

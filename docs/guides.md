@@ -29,8 +29,12 @@
   - Optional audience whitelisting when configured
 
 ## Operational tips
-- Add timeouts to outgoing HTTP (JWKS fetching) if you wrap or subclass `Keys`.
-- Prefer enabling TLS verification; disable only in trusted environments.
+- Current `Keys` implementation:
+  - First JWKS load is synchronous via `requests.get(self.url)` without an explicit timeout
+  - Background refresh uses `aiohttp.ClientSession().get(self.url, ssl=...)` where `ssl` is controlled by `verify_tls`
+- Practical recommendations (adapt to your environment):
+  - Add explicit timeouts and retries by wrapping or subclassing `Keys`
+  - Keep TLS verification enabled (`verify_tls=True`) for trusted HTTPS sources; disable only in tests
 
 ## Security best practices
 - Rotate keys periodically; prefer short `expires`.
