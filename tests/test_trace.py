@@ -34,3 +34,9 @@ class TestClaims(unittest.TestCase):
         )
         claims.validate()
 
+    def test_trace_empty_args(self):
+        trace = Trace()
+        self.assertEqual(str(trace), "")
+        # UUIDv5 от пустой строки должен быть детерминирован
+        name_space = uuid.uuid4()
+        self.assertEqual(trace.get(str(name_space)), str(uuid.uuid5(name_space, "")))
