@@ -65,6 +65,7 @@ class JsonDumps:
                         return vars(value)
                 except Exception as e:
                     raise type(e)("JSON serialization failed: {}".format(e)) from e
+
             df = jdf
 
         def dumps(*args, default=None, **kwargs):
@@ -76,6 +77,7 @@ class JsonDumps:
 
     def __enter__(self):
         json.dumps = self.dumps
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         json.dumps = self.original_dumps
@@ -227,23 +229,20 @@ class Session:
 
     # Service JWT claims
     @property
-    def scope(self) -> list:
-        if "scope" not in self._claims:
-            self._claims["scope"] = []
+    def scope(self) -> Optional[list]:
         return self._claims.scope
 
     @scope.setter
     def scope(self, value: list):
-        if value is None:
-            self._claims["scope"] = []
-        elif isinstance(value, list):
-            if len(value) > 0:
-                self._claims["scope"] = list(map(str, value))
+        if isinstance(value, list):
+            self._claims.scope = list(map(str, value))
+        else:
+            raise ValueError("'scope' must be a list")
 
     @property
     def path(self) -> Optional[str]:
         """JWT location"""
-        return self._claims.get("location", None)
+        return self._claims.location
 
     @path.setter
     def path(self, value: str):
@@ -259,7 +258,7 @@ class Session:
 
     @property
     def response_type(self) -> Optional[str]:
-        return self._claims.get("type", None)
+        return self._claims.type
 
     @response_type.setter
     def response_type(self, value: str):
@@ -273,8 +272,8 @@ class Session:
         del self._claims["type"]
 
     @property
-    def request_scope(self) -> str:
-        return self._claims["_scope"] if "_scope" in self._claims else ""
+    def request_scope(self) -> Optional[str]:
+        return self._claims.get("_scope", None)
 
     @request_scope.setter
     def request_scope(self, value: str):
@@ -293,18 +292,18 @@ class Session:
 
     # Data JWT claims
     @property
-    def payloads(self) -> dict:
-        if "_payloads" not in self._claims:
-            setattr(self._claims, "_payloads", {})
-        return self._claims["_payloads"]
+    def payloads(self) -> Optional[dict]:
+        return self._claims.get("_payloads", None)
 
     @payloads.setter
     def payloads(self, value: dict):
         """if setter None or null value, deleting "_payloads"""""
-        if value:
+        if not value:
+            del self.payloads
+        elif isinstance(value, dict):
             self._claims["_payloads"] = value
         else:
-            del self.payloads
+            raise ValueError("'payloads' must be a dict")
 
     @payloads.deleter
     def payloads(self):
