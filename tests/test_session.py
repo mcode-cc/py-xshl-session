@@ -11,7 +11,6 @@ import xshl.session
 from xshl.session import Session, SessionClaims, Trace, dict_merge, ConfigSession, DEFAULT_STR, DEFAULT_UID
 from xshl.session.keys import Keys, DEFAULT_KEYS_TTL
 
-# Constants for testing
 NAMESPACE_OID = uuid.NAMESPACE_OID
 
 
@@ -43,7 +42,7 @@ class TestSession(unittest.TestCase):
         cls.kid = kid = JsonWebKey.import_key(public_key).thumbprint()
 
         mock_config = Mock(spec=ConfigSession)
-        mock_config.app = str(uuid.uuid4())  # Convert to string for iss
+        mock_config.app = str(uuid.uuid4())
         mock_config.version = 1
         mock_config.expires = 3600
         mock_config.audience = None
@@ -102,31 +101,41 @@ class TestSession(unittest.TestCase):
         self.session.aud = new_aud
         self.assertEqual(self.session.aud, new_aud)
 
-        self.assertEqual(self.session.scope, [])
+        self.assertIsNone(self.session.scope)
         new_scope = ["scope1", "scope2"]
         self.session.scope = new_scope
         self.assertEqual(self.session.scope, new_scope)
-        self.session.scope = None
-        self.assertEqual(self.session.scope, [])
+
+        self.assertIsNone(self.session.request_scope)
+        new_request_scope = "foo_scope"
+        self.session.request_scope = new_request_scope
+        self.assertEqual(self.session.request_scope, new_request_scope)
+        self.session.request_scope = ""
+        self.assertIsNone(self.session.request_scope)
+        self.session.request_scope = new_request_scope
+        del self.session.request_scope
+        self.assertIsNone(self.session.request_scope)
 
         self.assertIsNone(self.session.path)
         new_path = "/test/path"
         self.session.path = new_path
         self.assertEqual(self.session.path, new_path)
+        self.session.path = ""
+        self.assertIsNone(self.session.path)
+        self.session.path = new_path
         del self.session.path
         self.assertIsNone(self.session.path)
 
-        self.assertEqual(self.session.payloads, {})
+        self.assertIsNone(self.session.payloads)
         new_payloads = {"key": "value"}
         self.session.payloads = new_payloads
         self.assertEqual(self.session.payloads, new_payloads)
+        self.session.payloads = {}
+        self.assertIsNone(self.session.payloads)
+        self.session.payloads = new_payloads
         del self.session.payloads
-        self.assertEqual(self.session.payloads, {})
+        self.assertIsNone(self.session.payloads)
 
-        # Свойства без сеттеров: сперва проверяем текущие значения, затем пытаемся изменить
-        self.assertEqual(self.session.iss, self.mock_config.app)
-        self.assertIsInstance(self.session.sid, str)
-        self.assertTrue(len(self.session.sid) > 0)
         prev_iss = self.session.iss
         prev_sid = self.session.sid
         with self.assertRaises(AttributeError):
@@ -146,9 +155,19 @@ class TestSession(unittest.TestCase):
         )
         self.assertDictEqual(dict(self.session), result)
 
+        level = "WARNING"
+
+        class TestEncodeError(Exception):
+            pass
+
         # Test jwt property when encode fails
-        with patch("xshl.session.jwt.encode", side_effect=Exception("Encode error")):
-            self.assertIsNone(self.session.jwt)
+        with self.assertLogs("xshl.session", level=level) as captured:
+            with patch("xshl.session.jwt.encode", side_effect=TestEncodeError("Test Encode error")):
+                self.assertIsNone(self.session.jwt)
+
+            self.assertTrue(len(captured.records) > 0)
+            self.assertEqual(captured.records[0].levelname, level)
+            self.assertIsInstance(captured.records[0].msg, TestEncodeError)
 
     def test_add_operation(self):
         _payloads = {"new_key": "value", "foo": "bar"}
@@ -213,20 +232,23 @@ class TestSession(unittest.TestCase):
         self.assertIsNone(self.session["non_existent_key"])
 
     def test_properties_items(self):
+        self.assertTrue(self.session["iss"] == self.session.iss == self.mock_config.app)
+        self.assertTrue(self.session["sid"] == self.session.sid)
+
         self.assertEqual(self.session["aud"], DEFAULT_STR)
         self.assertEqual(self.session.aud, DEFAULT_STR)
         self.assertEqual(self.session["sub"], DEFAULT_UID)
         self.assertEqual(self.session.sub, DEFAULT_UID)
-        self.assertEqual(self.session["scope"], [])
-        self.assertEqual(self.session.scope, [])
+        self.assertIsNone(self.session["scope"])
+        self.assertIsNone(self.session.scope)
         self.assertIsNone(self.session["location"])
         self.assertIsNone(self.session.path)
         self.assertIsNone(self.session["type"])
         self.assertIsNone(self.session.response_type)
         self.assertIsNone(self.session["_scope"])
-        self.assertEqual(self.session.request_scope, "")
-        self.assertEqual(self.session["_payloads"], {})
-        self.assertEqual(self.session.payloads, {})
+        self.assertIsNone(self.session.request_scope)
+        self.assertIsNone(self.session["_payloads"])
+        self.assertIsNone(self.session.payloads)
 
         aud = "test-aud"
         sub = "test-sub"
@@ -250,10 +272,20 @@ class TestSession(unittest.TestCase):
         self.assertEqual(self.session["location"], self.session.path)
         self.assertEqual(self.session["type"], self.session.response_type)
         self.assertEqual(self.session["_scope"], self.session.request_scope)
-        self.assertEqual(self.session["_payloads"], self.session.payloads)
+        self.assertDictEqual(self.session["_payloads"], self.session.payloads)
 
-        self.assertEqual(self.session["iss"], self.session.iss)
-        self.assertEqual(self.session["sid"], self.session.sid)
+        del self.session.payloads
+        del self.session.request_scope
+        del self.session.path
+        self.assertIsNone(self.session.payloads)
+        self.assertNotIn("_payloads", self.session._claims)
+        self.assertIsNone(self.session.request_scope)
+        self.assertNotIn("_scope", self.session._claims)
+        self.assertIsNone(self.session.path)
+        self.assertNotIn("location", self.session._claims)
+
+        self.assertDictEqual(self.session._claims, dict(self.session))
+        self.assertDictEqual(self.session._claims, {**self.session})
 
     def test_len_and_iter(self):
         self.assertEqual(len(self.session), len(self.session._claims))
