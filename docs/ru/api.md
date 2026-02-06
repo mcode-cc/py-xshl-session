@@ -55,11 +55,12 @@ ConfigSession(
 ```python
 Session(config: ConfigSession, *trace_args)
 ```
-- `claims_cls`: переопределяемый класс claims, по умолчанию `SessionClaims`.
-- `trace_cls`: переопределяемый класс трассировки, по умолчанию `Trace`.
+- `claims_cls` (ClassVar): переопределяемый класс claims, по умолчанию `SessionClaims`.
+- `trace_cls` (ClassVar): переопределяемый класс трассировки, по умолчанию `Trace`.
+- `merge_attributes` (ClassVar): кортеж имен claims для слияния вместо замены (по умолчанию `("_payloads", "scope")`).
 
 Методы/интерфейс (оболочка над внутренним хранилищем `_claims`):
-- `__add__(other: str) -> Session`: декодирует внешний JWT и мерджит выбранные claims.
+- `__add__(other: str) -> Session`: декодирует внешний JWT и сливает claims в текущую сессию. Все claims копируются; claims из `merge_attributes` сливаются (словари — глубокое слияние, списки — удаление дублей без гарантии порядка).
 - `__len__() -> int`: количество элементов во внутреннем `_claims`.
 - `__contains__(key) -> bool`: проверка наличия ключа во внутреннем `_claims`.
 - `__getitem__(key) -> Any`: доступ к значению claim из внутреннего `_claims`.

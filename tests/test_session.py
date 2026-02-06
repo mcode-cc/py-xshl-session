@@ -197,6 +197,30 @@ class TestSession(unittest.TestCase):
         self.assertTrue(mock_claims["scope"][0] in self.session.scope and mock_claims["scope"][1] in self.session.scope)
         self.assertIs(result, self.session)
 
+    def test_add_operation_merge_attributes_override(self):
+        class CustomClaims(SessionClaims):
+            REGISTERED_CLAIMS = SessionClaims.REGISTERED_CLAIMS + ["roles"]
+
+        class CustomSession(Session):
+            claims_cls = CustomClaims
+            merge_attributes = ("roles",)
+
+        session = CustomSession(self.mock_config, *self.trace)
+        session._claims["roles"] = ["reader", "writer"]
+
+        self.raw_claims.update({
+            "roles": ["writer", "admin"],
+            "sub": "override-sub",
+            "aud": "override-aud"
+        })
+        mock_claims = session.claims_cls(self.raw_claims, header=None, options=session.options)
+
+        with patch("xshl.session.jwt.decode", return_value=mock_claims):
+            _ = session + "jwt_string"
+
+        self.assertEqual(set(session._claims["roles"]), {"reader", "writer", "admin"})
+        self.assertEqual(session.sub, "override-sub")
+
     def test_add_operation_audience_validation(self):
         _audience = self.mock_config.audience
         allowed_aud = "allowed_aud"

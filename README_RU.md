@@ -35,6 +35,7 @@ Session in JWT
 ```
 
 Примечание: метод `Session.jwt` внутри использует контекстный менеджер `JsonDumps` для сериализации claims, поскольку `authlib` не предоставляет `default` для JSON дампа. Подробности см. в `docs/ru/api.md`.
+Примечание по слиянию: при `session + token` все claims копируются, а claims из `Session.merge_attributes` сливаются.
 
 ## Документация
 

@@ -14,8 +14,9 @@
   - `trace` computed from `Trace` and `jti`
 
 ## Merge semantics (`session + jwt_str`)
-- Decoded claims are merged into current session for: `aud`, `sub`, `_payloads`, `scope`, `_scope`.
-- Dicts are deep-merged; lists are deduplicated while preserving order.
+- All decoded claims are copied into the current session.
+- Claims listed in `Session.merge_attributes` are merged (default: `("_payloads", "scope")`).
+- Dicts are deep-merged; lists are deduplicated (order is not guaranteed).
 
 ## JWE usage
 - `serialize(payload, header)` uses recipient public key by `kid` from `Keys`.
