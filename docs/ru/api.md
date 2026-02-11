@@ -72,7 +72,7 @@ Claims:
 - `iss: str` (только чтение)
 - `sub: str`
 - `aud: str` (учитывает `ConfigSession.audience`)
-- `sid: str` (только чтение)
+- `sid: str | None` (только чтение; появляется после первого вызова `session.jwt`)
 - `scope: list[str]`
 - `path: str | None` (`location`)
 - `response_type: str | None` (`type`)
@@ -81,7 +81,7 @@ Claims:
 
 JWT:
 - `jwt -> str | None`: выпускает подписанный JWT, задаёт `jti`, `iat`, `nbf`, `exp`, `trace`. Внутри использует `JsonDumps` для сериализации в JSON.
-- `options -> dict`: опции валидации (`version`, `sid`, `trace`, опционально `aud`).
+- `options -> dict`: опции валидации. Всегда содержит `version` и проверку `trace`. `sid` добавляется только когда `Session.sid` уже установлен. `aud` добавляется опционально при конфигурации.
 - `name -> str`: `keys.name`.
 
 JWE:

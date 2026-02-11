@@ -41,6 +41,8 @@ jwt_token = session.jwt
 session + "<external-jwt>"
 ```
 
+Примечание: все claims копируются; claims из `Session.merge_attributes` сливаются.
+
 JWE шифрование/дешифрование:
 
 ```python

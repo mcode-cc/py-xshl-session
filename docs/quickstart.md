@@ -42,6 +42,8 @@ Merge external JWT:
 session + "<external-jwt>"
 ```
 
+Note: all claims are copied; claims listed in `Session.merge_attributes` are merged.
+
 JWE encrypt/decrypt:
 
 ```python

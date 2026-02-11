@@ -3,7 +3,6 @@ import os
 import time
 import uuid
 from copy import deepcopy
-from uuid import NAMESPACE_OID
 from typing import Optional, Type, Union, KeysView, ClassVar
 from datetime import datetime
 
@@ -137,7 +136,6 @@ class Session:
                 "iss": self._config.app,
                 "sub": DEFAULT_UID,
                 "aud": DEFAULT_STR,
-                "sid": str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(self._trace))),
                 "version": self._config.version
             },
             header=config.header
@@ -227,7 +225,7 @@ class Session:
     # ------
     @property
     def sid(self):
-        return self._claims.sid
+        return self._claims.get("sid", None)
 
     # Service JWT claims
     @property
@@ -343,7 +341,10 @@ class Session:
     def jwt(self) -> Optional[str]:
         try:
             _t = int(time.time())
-            self._claims.jti = str(uuid.uuid4())
+            jti = uuid.uuid4()
+            self._claims.jti = str(jti)
+            if self.sid is None:
+                self._claims.sid = str(uuid.uuid5(uuid.uuid5(jti, self.name), str(self._trace)))
             self._claims.iat = _t
             self._claims.exp = _t + self._config.expires
             self._claims.nbf = _t
@@ -363,9 +364,10 @@ class Session:
     def options(self):
         result = {
             "version": {"value": self._config.version},
-            "trace": {"validate": self._trace.validate},
-            "sid": {"value": self.sid}
+            "trace": {"validate": self._trace.validate}
         }
+        if self.sid is not None:
+            result["sid"] = {"value": self.sid}
         if isinstance(self._config.audience, list):
             result["aud"] = {"values": self._config.audience}
         return result

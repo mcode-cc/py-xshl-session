@@ -10,6 +10,7 @@
 ## Claims lifecycle
 - When calling `session.jwt`:
   - `jti` regenerated
+  - `sid` generated once if absent
   - `iat`, `nbf`, `exp` set using `expires`
   - `trace` computed from `Trace` and `jti`
 
@@ -25,7 +26,7 @@
 ## Validation options
 - `Session.options` always enforces:
   - `version` fixed value
-  - `sid` fixed value
+  - `sid` fixed value only when `Session.sid` already exists
   - `trace` validated via `Trace.validate`
   - Optional audience whitelisting when configured
 

@@ -72,7 +72,7 @@ Claims properties:
 - `iss: str` (read-only)
 - `sub: str`
 - `aud: str` (respects `ConfigSession.audience` if set)
-- `sid: str` (read-only)
+- `sid: str | None` (read-only; appears after first `session.jwt` call)
 - `scope: list[str]`
 - `path: str | None` (aka `location`)
 - `response_type: str | None` (aka `type`)
@@ -81,7 +81,7 @@ Claims properties:
 
 JWT:
 - `jwt -> str | None`: Issues a signed JWT. Sets `jti`, `iat`, `nbf`, `exp`, `trace`. Uses `JsonDumps` context internally for JSON serialization.
-- `options -> dict`: Validation options. Includes fixed `version`, `trace` validator, `sid`, and optional audience values.
+- `options -> dict`: Validation options. Always includes fixed `version` and `trace` validator. Includes `sid` only when `Session.sid` is present. Includes optional audience values when configured.
 - `name -> str`: Exposes `keys.name`.
 
 JWE:
