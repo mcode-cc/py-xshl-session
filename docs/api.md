@@ -55,11 +55,12 @@ Constructor:
 ```python
 Session(config: ConfigSession, *trace_args)
 ```
-- `claims_cls`: overrideable claims class, default `SessionClaims`.
-- `trace_cls`: overrideable trace class, default `Trace`.
+- `claims_cls` (ClassVar): overrideable claims class, default `SessionClaims`.
+- `trace_cls` (ClassVar): overrideable trace class, default `Trace`.
+- `merge_attributes` (ClassVar): tuple of claim names to merge instead of replace (default: `("_payloads", "scope")`).
 
 Dunder methods (wrappers over the internal `_claims` mapping):
-- `__add__(other: str) -> Session`: Decode and merge selected claims from external JWT.
+- `__add__(other: str) -> Session`: Decode external JWT and merge claims into the current session. All claims are copied; claims listed in `merge_attributes` are merged (dicts are deep-merged, lists are deduplicated without order guarantee).
 - `__len__() -> int`: Number of entries in `_claims`.
 - `__contains__(key) -> bool`: Membership check against `_claims` keys.
 - `__getitem__(key) -> Any`: Access a claim value from `_claims`.
@@ -71,7 +72,7 @@ Claims properties:
 - `iss: str` (read-only)
 - `sub: str`
 - `aud: str` (respects `ConfigSession.audience` if set)
-- `sid: str` (read-only)
+- `sid: str | None` (read-only; appears after first `session.jwt` call)
 - `scope: list[str]`
 - `path: str | None` (aka `location`)
 - `response_type: str | None` (aka `type`)
@@ -80,7 +81,7 @@ Claims properties:
 
 JWT:
 - `jwt -> str | None`: Issues a signed JWT. Sets `jti`, `iat`, `nbf`, `exp`, `trace`. Uses `JsonDumps` context internally for JSON serialization.
-- `options -> dict`: Validation options. Includes fixed `version`, `trace` validator, `sid`, and optional audience values.
+- `options -> dict`: Validation options. Always includes fixed `version` and `trace` validator. Includes `sid` only when `Session.sid` is present. Includes optional audience values when configured.
 - `name -> str`: Exposes `keys.name`.
 
 JWE:

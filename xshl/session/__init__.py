@@ -3,8 +3,7 @@ import os
 import time
 import uuid
 from copy import deepcopy
-from uuid import NAMESPACE_OID
-from typing import Optional, Type, Union, KeysView
+from typing import Optional, Type, Union, KeysView, ClassVar
 from datetime import datetime
 
 import json
@@ -125,8 +124,9 @@ class ConfigSession:
 
 
 class Session:
-    claims_cls: Type[JWTClaims] = SessionClaims
-    trace_cls: Type[Trace] = Trace
+    claims_cls: ClassVar[Type[JWTClaims]] = SessionClaims
+    trace_cls: ClassVar[Type[Trace]] = Trace
+    merge_attributes: ClassVar[tuple[str, ...]] = ("_payloads", "scope")
 
     def __init__(self, config: ConfigSession, *args):
         self._config = config
@@ -136,7 +136,6 @@ class Session:
                 "iss": self._config.app,
                 "sub": DEFAULT_UID,
                 "aud": DEFAULT_STR,
-                "sid": str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(self._trace))),
                 "version": self._config.version
             },
             header=config.header
@@ -144,7 +143,8 @@ class Session:
 
     def __add__(self, other: str):
         """
-        Combines attributes ("aud", "sub", "_payloads", "scope", "_scope") the current and transmitted session or JWT.
+        Combines attributes from transmitted session or JWT into current session.
+        List merging removes duplicates.
         """
         if isinstance(other, str):
             try:
@@ -157,17 +157,17 @@ class Session:
             except Exception as e:
                 log.warning(e)
             else:
-                for attribute in ["aud", "sub", "_payloads", "scope", "_scope"]:
-                    if attribute in _claims:
-                        if isinstance(_claims[attribute], dict) and isinstance(self._claims.get(attribute), dict):
-                            setattr(self._claims, attribute, dict_merge(self._claims[attribute], _claims[attribute]))
-                        # summing lists without duplicate and maintaining order
-                        elif isinstance(_claims[attribute], list) and isinstance(self._claims.get(attribute), list):
-                            setattr(
-                                self._claims, attribute, list(set(self._claims.get(attribute) + _claims[attribute]))
-                            )
+                for attribute, value in _claims.items():
+                    if attribute in self.merge_attributes:
+                        current = self._claims.get(attribute)
+                        if isinstance(value, dict) and isinstance(current, dict):
+                            self._claims[attribute] = dict_merge(current, value)
+                        elif isinstance(value, list) and isinstance(current, list):
+                            self._claims[attribute] = list(set(current + value))
                         else:
-                            setattr(self._claims, attribute, _claims[attribute])
+                            self._claims[attribute] = value
+                    else:
+                        self._claims[attribute] = value
         return self
 
     def __len__(self) -> int:
@@ -225,7 +225,7 @@ class Session:
     # ------
     @property
     def sid(self):
-        return self._claims.sid
+        return self._claims.get("sid", None)
 
     # Service JWT claims
     @property
@@ -341,7 +341,10 @@ class Session:
     def jwt(self) -> Optional[str]:
         try:
             _t = int(time.time())
-            self._claims.jti = str(uuid.uuid4())
+            jti = uuid.uuid4()
+            self._claims.jti = str(jti)
+            if self.sid is None:
+                self._claims.sid = str(uuid.uuid5(uuid.uuid5(jti, self.name), str(self._trace)))
             self._claims.iat = _t
             self._claims.exp = _t + self._config.expires
             self._claims.nbf = _t
@@ -361,9 +364,10 @@ class Session:
     def options(self):
         result = {
             "version": {"value": self._config.version},
-            "trace": {"validate": self._trace.validate},
-            "sid": {"value": self.sid}
+            "trace": {"validate": self._trace.validate}
         }
+        if self.sid is not None:
+            result["sid"] = {"value": self.sid}
         if isinstance(self._config.audience, list):
             result["aud"] = {"values": self._config.audience}
         return result

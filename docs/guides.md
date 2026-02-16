@@ -10,12 +10,14 @@
 ## Claims lifecycle
 - When calling `session.jwt`:
   - `jti` regenerated
+  - `sid` generated once if absent
   - `iat`, `nbf`, `exp` set using `expires`
   - `trace` computed from `Trace` and `jti`
 
 ## Merge semantics (`session + jwt_str`)
-- Decoded claims are merged into current session for: `aud`, `sub`, `_payloads`, `scope`, `_scope`.
-- Dicts are deep-merged; lists are deduplicated while preserving order.
+- All decoded claims are copied into the current session.
+- Claims listed in `Session.merge_attributes` are merged (default: `("_payloads", "scope")`).
+- Dicts are deep-merged; lists are deduplicated (order is not guaranteed).
 
 ## JWE usage
 - `serialize(payload, header)` uses recipient public key by `kid` from `Keys`.
@@ -24,7 +26,7 @@
 ## Validation options
 - `Session.options` always enforces:
   - `version` fixed value
-  - `sid` fixed value
+  - `sid` fixed value only when `Session.sid` already exists
   - `trace` validated via `Trace.validate`
   - Optional audience whitelisting when configured
 

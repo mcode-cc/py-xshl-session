@@ -55,11 +55,12 @@ ConfigSession(
 ```python
 Session(config: ConfigSession, *trace_args)
 ```
-- `claims_cls`: переопределяемый класс claims, по умолчанию `SessionClaims`.
-- `trace_cls`: переопределяемый класс трассировки, по умолчанию `Trace`.
+- `claims_cls` (ClassVar): переопределяемый класс claims, по умолчанию `SessionClaims`.
+- `trace_cls` (ClassVar): переопределяемый класс трассировки, по умолчанию `Trace`.
+- `merge_attributes` (ClassVar): кортеж имен claims для слияния вместо замены (по умолчанию `("_payloads", "scope")`).
 
 Методы/интерфейс (оболочка над внутренним хранилищем `_claims`):
-- `__add__(other: str) -> Session`: декодирует внешний JWT и мерджит выбранные claims.
+- `__add__(other: str) -> Session`: декодирует внешний JWT и сливает claims в текущую сессию. Все claims копируются; claims из `merge_attributes` сливаются (словари — глубокое слияние, списки — удаление дублей без гарантии порядка).
 - `__len__() -> int`: количество элементов во внутреннем `_claims`.
 - `__contains__(key) -> bool`: проверка наличия ключа во внутреннем `_claims`.
 - `__getitem__(key) -> Any`: доступ к значению claim из внутреннего `_claims`.
@@ -71,7 +72,7 @@ Claims:
 - `iss: str` (только чтение)
 - `sub: str`
 - `aud: str` (учитывает `ConfigSession.audience`)
-- `sid: str` (только чтение)
+- `sid: str | None` (только чтение; появляется после первого вызова `session.jwt`)
 - `scope: list[str]`
 - `path: str | None` (`location`)
 - `response_type: str | None` (`type`)
@@ -80,7 +81,7 @@ Claims:
 
 JWT:
 - `jwt -> str | None`: выпускает подписанный JWT, задаёт `jti`, `iat`, `nbf`, `exp`, `trace`. Внутри использует `JsonDumps` для сериализации в JSON.
-- `options -> dict`: опции валидации (`version`, `sid`, `trace`, опционально `aud`).
+- `options -> dict`: опции валидации. Всегда содержит `version` и проверку `trace`. `sid` добавляется только когда `Session.sid` уже установлен. `aud` добавляется опционально при конфигурации.
 - `name -> str`: `keys.name`.
 
 JWE:

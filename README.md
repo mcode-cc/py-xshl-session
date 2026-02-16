@@ -56,6 +56,7 @@ jwt_token = session.jwt
 ```
 
 Note: `Session.jwt` uses a `JsonDumps` context internally to serialize claims because Authlib JWT encoding does not expose a `default` hook for JSON; see API docs.
+Merge note: all claims are copied on `session + token`, and claims in `Session.merge_attributes` are merged.
 
 JWE helpers:
 

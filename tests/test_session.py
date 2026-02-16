@@ -65,6 +65,7 @@ class TestSession(unittest.TestCase):
     def setUp(self):
         self.app = self.mock_config.app
         self.name = self.mock_config.keys.name
+        self.mock_config.audience = None
         self.trace = ["trace_arg1", "trace_arg2"]
         _time = time.time()
         self.session = Session(self.mock_config, *self.trace)
@@ -82,15 +83,17 @@ class TestSession(unittest.TestCase):
 
     def test_initialization(self):
         trace = Trace(*self.trace)
-        sid = str(uuid.uuid5(uuid.uuid5(NAMESPACE_OID, self.name), str(trace)))
 
         self.assertEqual(self.session.iss, self.mock_config.app)
         self.assertEqual(self.session.sub, DEFAULT_UID)
         self.assertEqual(self.session.aud, DEFAULT_STR)
         self.assertEqual(str(trace), str(self.session._trace))
-        self.assertEqual(self.session.sid, sid)
+        self.assertIsNone(self.session.sid)
         self.assertEqual(self.session["version"], self.mock_config.version)
         self.assertEqual(self.session._claims.header, self.mock_config.header)
+
+        _ = self.session.jwt
+        self.assertIsNotNone(self.session.sid)
 
     def test_setter_properties(self):
         new_sub = "new_sub"
@@ -170,6 +173,10 @@ class TestSession(unittest.TestCase):
             self.assertIsInstance(captured.records[0].msg, TestEncodeError)
 
     def test_add_operation(self):
+        sid = str(uuid.uuid4())
+        self.session._claims["sid"] = sid
+        self.raw_claims["sid"] = sid
+
         _payloads = {"new_key": "value", "foo": "bar"}
         add_payloads = {"new_key": {"baz": "foo"}}
         new_payloads = dict_merge(_payloads, add_payloads)
@@ -197,34 +204,62 @@ class TestSession(unittest.TestCase):
         self.assertTrue(mock_claims["scope"][0] in self.session.scope and mock_claims["scope"][1] in self.session.scope)
         self.assertIs(result, self.session)
 
+    def test_add_operation_merge_attributes_override(self):
+        class CustomSession(Session):
+            merge_attributes = ("roles",)
+
+        session = CustomSession(self.mock_config, *self.trace)
+        sid = str(uuid.uuid4())
+        session._claims["sid"] = sid
+        self.raw_claims["sid"] = sid
+        session._claims["roles"] = ["reader", "writer"]
+
+        self.raw_claims.update({
+            "roles": ["writer", "admin"],
+            "sub": "override-sub",
+            "aud": "override-aud"
+        })
+        mock_claims = session.claims_cls(self.raw_claims, header=None, options=session.options)
+
+        with patch("xshl.session.jwt.decode", return_value=mock_claims):
+            _ = session + "jwt_string"
+
+        self.assertEqual(set(session._claims["roles"]), {"reader", "writer", "admin"})
+        self.assertEqual(session.sub, "override-sub")
+
     def test_add_operation_audience_validation(self):
         _audience = self.mock_config.audience
-        allowed_aud = "allowed_aud"
-        self.mock_config.audience = [allowed_aud]
-        session = Session(self.mock_config, *self.trace)
-        mock_jwt_str = "mock_jwt_string"
-        sub = uuid.uuid4()
-        self.raw_claims.update({"aud": "denied_aud", "sub": sub})
+        try:
+            allowed_aud = "allowed_aud"
+            self.mock_config.audience = [allowed_aud]
+            session = Session(self.mock_config, *self.trace)
+            sid = str(uuid.uuid4())
+            session._claims["sid"] = sid
+            self.raw_claims["sid"] = sid
 
-        with patch(
-                "xshl.session.jwt.decode",
-                return_value=SessionClaims(self.raw_claims, header=None, options=session.options),
-        ):
-            _ = session + mock_jwt_str
+            mock_jwt_str = "mock_jwt_string"
+            sub = uuid.uuid4()
+            self.raw_claims.update({"aud": "denied_aud", "sub": sub})
 
-        self.assertEqual(session.aud, DEFAULT_STR)
-        self.assertEqual(session.sub, DEFAULT_UID)
+            with patch(
+                    "xshl.session.jwt.decode",
+                    return_value=SessionClaims(self.raw_claims, header=None, options=session.options),
+            ):
+                _ = session + mock_jwt_str
 
-        self.raw_claims["aud"] = allowed_aud
-        with patch(
-                "xshl.session.jwt.decode",
-                return_value=SessionClaims(self.raw_claims, header=None, options=session.options),
-        ):
-            _ = session + mock_jwt_str
-        self.assertEqual(session.aud, allowed_aud)
-        self.assertEqual(session.sub, sub)
+            self.assertEqual(session.aud, DEFAULT_STR)
+            self.assertEqual(session.sub, DEFAULT_UID)
 
-        self.mock_config.audience = _audience
+            self.raw_claims["aud"] = allowed_aud
+            with patch(
+                    "xshl.session.jwt.decode",
+                    return_value=SessionClaims(self.raw_claims, header=None, options=session.options),
+            ):
+                _ = session + mock_jwt_str
+            self.assertEqual(session.aud, allowed_aud)
+            self.assertEqual(session.sub, sub)
+        finally:
+            self.mock_config.audience = _audience
 
     def test_contains_and_getitem(self):
         self.assertTrue("iss" in self.session)
